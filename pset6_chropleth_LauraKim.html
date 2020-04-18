@@ -1,0 +1,250 @@
+<html lang='eng'>
+    <head>
+
+        <script src = "https://d3js.org/d3.v5.min.js" charset="utf-8"></script>
+        <script src="https://d3js.org/d3-scale-chromatic.v1.min.js"></script>
+        <script src="https://d3js.org/topojson.v2.min.js"></script>
+        <!-- add a style here -->
+        <style>
+          #tooltip.hidden {
+            display: none;
+          }
+
+          #tooltip {
+            position:absolute;
+            width: 100px;
+            height: auto;
+            padding: 5px;
+            background-color: white;
+            z-index: 10;
+            font-size: 7px;
+            font-family: "Proxima Nova", "Montserrat", sans-serif;
+          }
+
+          .percentage {
+            font-size: 11px;
+            font-family: "Proxima Nova", "Montserrat", sans-serif;
+          }
+
+          </style>
+    </head>
+    <body>
+        <!-- page elemets and content go here. -->
+        <div id="tooltip" class="hidden">
+          <p><span id="value">100</span></p>
+        </div>
+        <script>
+            //Our D3 code will go here.
+
+            //2. Load the data:
+            // YOUR CODE HERE.
+            var bostonurl='https://gist.githubusercontent.com/cesandoval/09b2e39263c748fbcb84b927cecc7c46/raw/ab71d3638efd2545ec99c2651c6f2ddcea9d2a07/boston.json'
+
+            var bos311url="https://raw.githubusercontent.com/brookefzy/BigData2020/master/pset6/boston_311.csv"
+            //3. Create SVG Canvas
+            //3.1 Width and height of the whole visualization
+            // YOUR CODE HERE.
+            var width = 1200
+            var height = 1000
+
+            var path = d3.geoPath()
+            //3.2 Create SVG canvas
+            // YOUR CODE HERE.
+            var svg = d3.select("body")
+                        .append("svg")
+                        .attr("width", width)
+                        .attr("height", height)
+
+            //3.3 Append empty placeholder g element to the svg
+            //g will contain geometry elements
+            // YOUR CODE HERE.
+            // var g=svg.append("g")
+
+            //4.Set Projection Parameters
+            // YOUR CODE HERE.
+            var albersProjection = d3.geoAlbers()
+                .scale(190000)
+                .rotate([71.057, 0])
+                .center([0,42.313])
+                .translate([width/2, height/2])
+
+            var path = d3.geoPath().projection(albersProjection);
+
+            var bos311 = d3.map()
+
+            var promises = [
+                           d3.json(bostonurl),
+                           d3.csv(bos311url)
+                          ]
+
+            //5.Create GeoPath function that uses built-in D3 functionality to turn
+            //lat/lon coordinates into screen coordinates;
+            // YOUR CODE HERE.
+            // var geoPath = d3.geoPath()
+            //     .projection(albersProjection)
+            //6. Load the data and bind data to svg canvas
+            // d3.json(bostonurl).then(ready)
+            Promise.all(promises).then(ready)
+            function ready(loadedData) {
+
+              // name the data
+              var mapData = loadedData[0];
+              var neighborhoodData = loadedData[1];
+
+              // create the color scale
+
+              var logvals = neighborhoodData.map(function(neighborhoodDatapoint) {
+                if (neighborhoodDatapoint.twitter==0){
+                  return Math.log(1)
+                }
+                else {
+                  return Math.log(neighborhoodDatapoint.twitter)
+                }
+              })
+
+              var color = d3.scaleQuantize()
+                  .domain([Math.min(...logvals), Math.max(...logvals)])
+                  .range(d3.schemePurples[9])
+
+              // draw the legend
+
+              svg.selectAll('rect')
+                .data(d3.schemePurples[9])
+                 .enter().append('rect')
+                 .attr('fill', function(d) { return d })
+                 .attr('x', function(d, i) { return i * 30 })
+                 .attr('y', 150)
+                 .attr('width', 60)
+                 .attr('height', 10);
+
+              // label the legend
+              svg.selectAll('text')
+                .data(color.range())
+                .enter().append('text')
+                .attr('x', function(d, i) { return i * 30 + 60 })
+                .attr('font-size', '5px')
+                .attr('text-anchor', 'middle')
+                .attr('y', 15+150)
+                .text(function(d) {
+                  var label = d3.format('.01f')(color.invertExtent(d)[0]) + " to " + d3.format('.01f')(color.invertExtent(d)[1])
+                  return label;
+                })
+              svg.append('text')
+                .attr('font-size', '18px')
+                .attr('y', 140)
+                .attr('text-anchor', 'start')
+                .attr('font-family', "Montserrat")
+                .text("311 Tweets per neighborhood (log scale)")
+
+              svg.selectAll("path")
+                 .data(topojson.feature(mapData, mapData.objects.boston_neigh).features)
+                 .enter()
+                 .append("path")
+                 .style("stroke", "white")
+                 .style("stroke-width", "0.2")
+                 .style("fill", function(feature) {
+                   var matchingNeighborhoodData = neighborhoodData.find(function(neighborhoodDatapoint) {
+                     return neighborhoodDatapoint.id == feature.properties.OBJECTID
+                   });
+                    return color(Math.log(matchingNeighborhoodData.twitter))
+                 })
+                 .attr("d", path)
+                 .on("mouseover", function(d){
+                   var matchingNeighborhoodData = neighborhoodData.find(function(neighborhoodDatapoint) {
+                     return neighborhoodDatapoint.id == d.properties.OBJECTID
+                   });
+                    d3.select("#tooltip")
+                    .style("left", d3.event.pageX + "px")
+                    .style("top", d3.event.pageY + "px")
+                    .style("opacity", "60%")
+                    .style("padding", "5px")
+                    .select("#value")
+                    .html("<p class='percentage'>" + matchingNeighborhoodData.Name +": " + String(((matchingNeighborhoodData.twitter)/(matchingNeighborhoodData.tot_count)*100).toFixed(2))+ "%"
+                    + "</p>" + "Twitter reporting as percentage of total reportings" )
+                   d3.select("#tooltip").classed("hidden", false);
+                 })
+                 .on("mouseout", function(){
+                   d3.select("#tooltip").classed("hidden", true);
+                 })
+            }
+
+
+
+
+            // 7. Add rodent data and bind data to svg canvas again.
+            // mouse over and out
+            //create a class for style
+            //calculate data
+            //create rect
+            // YOUR CODE HERE.
+            // d3.json(rodenturl).then(function(rodent){
+            //   console.log(rodent)
+            //   var rodents = svg.append("g")
+            //   rodents.selectAll("path")
+            //       .data(rodent.features)
+            //       .enter()
+            //       .append("path")
+            //       .attr("fill", initialDate)
+            //       .attr("stroke", "#999")
+            //       .attr("d", geoPath)
+            //       //apply style here
+            //       .attr("class", "incident")
+            //               //add mouseover effects here
+            //       .on("mouseover", function(d){
+            //         d3.select("h2").text(d.properties.LOCATION_STREET_NAME);
+            //         d3.select(this).attr("class","incident hover");
+            //       })
+            //       .on("mouseout", function(d){
+            //         d3.select("h2").text("");
+            //         d3.select(this).attr("class","incident");
+            //       });
+            // d3.select("#timeslide").on("input", function() {
+            //   update(+this.value);
+            // });
+            // function update(value) {
+            //   document.getElementById("range").innerHTML=month[value];
+            //   inputValue = month[value];
+            //   d3.selectAll(".incident")
+            //     .attr("fill", dateMatch);
+            // }
+            // function dateMatch(data, value) {
+            //   var d = new Date(data.properties.OPEN_DT);
+            //   var m = month[d.getMonth()];
+            //   if (inputValue == m) {
+            //     this.parentElement.appendChild(this);
+            //     return "red";
+            //   } else {
+            //     return "#999";
+            //   };
+            // }
+            // function initialDate(d,i){
+            //   var d = new Date(d.properties.OPEN_DT);
+            //   var m = month[d.getMonth()];
+            //   if (m=="January") {
+            //     this.parentElement.appendChild(this);
+            //     return "red";
+            //   } else {
+            //       return "#999";
+            //   };
+            // }
+            // })
+
+
+
+            // Part 3. add interactive==============================================
+            // when the input range changes update the value
+            // update the fill of each SVG of class "incident" with value
+
+            // function to match date
+
+            //Set Innitial State
+
+
+
+
+
+
+
+        </script>
+    </body>
+</html>
